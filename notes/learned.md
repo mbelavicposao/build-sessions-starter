@@ -13,3 +13,7 @@ Vrijedi zapamtiti: alat namjerno ne dira servere i ne otkriva strojeve, pa "done
 ## Korak 5 - gradnja
 Napravljen `projects/vuln-watch/index.html`: jedan file bez servera, s ugrađenim lažnim CSV podacima, brojačima danas/7/20 dana, grafom po danima, filtrima i tablicom grupiranom po Distro/Platforma/Alati.
 Vrijedi zapamtiti: browser iz sigurnosnih razloga ne smije čitati tuđe fileove kad HTML otvoriš dvoklikom, zato su podaci u istom fileu; "pogodena verzija" se računa numeričkom usporedbom verzija, ne tekstualnom.
+
+## Korak 6 - provjera
+Pokrenut `cscript //nologo check.js` u mapi projekta: 20/20 testova prošlo, na listi upada 48 od 54 objava (danas 4, 7 dana 19, 20 dana 48), ispalo je samo ono što ne vrtim (mysql, wordpress, nginx, git), test s verzijom radi u oba smjera.
+Vrijedi zapamtiti: Chrome i Edge se u ovoj sesiji ne dižu, pa izgled stranice i filtere mora pogledati čovjek; logika je dokazana pravim JS testom, ne "izgleda ok".
