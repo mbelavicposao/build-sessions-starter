@@ -51,3 +51,11 @@ Blok **PROSLA SNIMKA** (`csv-prev`) - ono što je alat pokazivao prošli put (cv
 - `powershell -File notify.ps1` pokaže lokalnu notifikaciju s brojkama i upiše redak u `notes/notify.log`; `-dry` ispiše isto bez notifikacije.
 - Test: u blok SOFTWARE upišem verziju koja je u opsegu → zapis se pojavi; promijenim verziju na fixanu → nestane s liste.
 - `cscript //nologo check.js` prolazi bez greške.
+
+## Tri retka (za ponedjeljak)
+
+**Problem.** Ujutro mi treba 20 minuta da prođem NVD i KEV, a većina se mene ne tiče - i ne znam pogađa li prijava baš moju verziju na strojovima.
+
+**Radi sada.** Jedna stranica koju dvokliknem: samo prijave za softver koji vrtim, za danas i 20 dana, s EPSS-om, KEV-om, je li fix izašao, što je novo od jučer, Top 5 od čega krenuti, i notifikacijom kad se nešto pojavi.
+
+**Sljedeći korak.** Zamijenim izmišljeni popis softvera stvarnim verzijama sa svojih strojova, koje upišem sam.
