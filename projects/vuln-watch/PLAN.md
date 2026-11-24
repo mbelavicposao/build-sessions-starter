@@ -21,15 +21,18 @@ Jedna HTML stranica koju otvorim dvoklikom i vidim samo javno objavljene ranjivo
 
 ## Sample data (sve izmišljeno)
 
-`data/software.csv` - stroj, softver, verzija, grupa, owner
-30 redaka, npr. `node-07, kubelet, 1.28.4, Platforma, tim-a@example.com`
+Podaci žive u dva bloka na dnu `index.html` (browser ne smije sam čitati druge fileove kad stranicu otvoriš dvoklikom).
 
-`data/vulns.csv` - cve, softver, pogođene_versije, fiksno_izdanje, cvss, kev, datum_objave, izvor_url
-60 redaka raspoređenih po zadnjih 20 dana, uključujući 3 dana bez ijednog zapisa.
+Blok **SOFTWARE** - stroj, softver, verzija, grupa, owner
+32 retka, npr. `k8s-node-01,kubelet,1.28.4,Platforma,tim-b@example.com`
+
+Blok **VULNS** - cve, softver, pogodene_versije, fiksno_izdanje, cvss, kev, dana_ako, izvor_url
+54 retaka raspoređenih po zadnjih 20 dana (dana_ako = prije koliko dana), uključujući 3 dana bez ijednog zapisa.
+CVE brojevi i linkovi su izmišljeni i vode na example.com.
 
 ## Done when
 
 - Otvorim `index.html` dvoklikom i vidim listu: CVE, softver, moja verzija, CVSS, KEV da/ne, advisory link.
 - Brojači gore pokazuju danas / 7 dana / 20 dana i brojevi se slažu s tablicom ispod.
 - Mogu filtrirati po grupi, softveru i KEV.
-- Test: u `software.csv` upišem verziju koja je u `vulns.csv` označena kao pogođena → zapis se odmah pojavi na listi; promijenim verziju na fixanu → nestane s liste.
+- Test: u blok SOFTWARE upišem verziju koja je u bloku VULNS označena kao pogođena → zapis se odmah pojavi na listi; promijenim verziju na fixanu → nestane s liste.

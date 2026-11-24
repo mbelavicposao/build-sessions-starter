@@ -1,0 +1,326 @@
+<!doctype html>
+<html lang="hr">
+<head>
+<meta charset="utf-8">
+<title>Vuln Watch - jutarnji pregled</title>
+<style>
+  :root { color-scheme: dark; }
+  body { margin: 0; padding: 20px 24px 40px; background: #12161c; color: #dfe6ee;
+         font: 14px/1.45 ui-monospace, Consolas, monospace; }
+  h1 { font-size: 18px; margin: 0 0 4px; }
+  h2 { font-size: 14px; margin: 26px 0 6px; color: #8fb7e0; text-transform: uppercase; letter-spacing: .06em; }
+  .meta { color: #7d8896; margin: 0 0 16px; }
+  .counters { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; }
+  .counters div { background: #1b222c; border: 1px solid #2b3543; border-radius: 6px; padding: 8px 14px; }
+  .counters b { display: block; font-size: 20px; }
+  .chart { display: flex; align-items: flex-end; gap: 3px; height: 46px; margin-bottom: 18px; }
+  .chart span { flex: 1; background: #33506e; border-radius: 2px 2px 0 0; min-height: 2px; }
+  .chart span.today { background: #4f8fd0; }
+  .filters { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; background: #1b222c;
+             border: 1px solid #2b3543; border-radius: 6px; padding: 8px 12px; }
+  select, input[type=search] { background: #12161c; color: #dfe6ee; border: 1px solid #38445a; border-radius: 4px; padding: 3px 6px; }
+  table { width: 100%; border-collapse: collapse; margin-top: 6px; }
+  th, td { text-align: left; padding: 5px 8px; border-bottom: 1px solid #232c38; vertical-align: top; }
+  th { color: #7d8896; font-weight: normal; font-size: 12px; }
+  .hi { color: #ff8a8a; font-weight: bold; }
+  .kev { color: #ffce54; }
+  .ok { color: #7bd88f; }
+  .dim { color: #7d8896; }
+  .empty { color: #7d8896; padding: 18px 0; }
+  a { color: #78b6ff; }
+  .hint { color: #7d8896; margin-top: 26px; }
+</style>
+</head>
+<body>
+<h1>Vuln Watch</h1>
+<p class="meta">Dan pregleda: <span id="today"></span> · zadnjih 20 dana · <b>svi podaci u ovoj datoteci su izmišljeni</b></p>
+
+<div class="counters" id="counters"></div>
+<div class="chart" id="chart" title="broj prijava po danu"></div>
+
+<div class="filters">
+  <label>Grupa <select id="f-group"></select></label>
+  <label>Softver <select id="f-soft"></select></label>
+  <label><input type="checkbox" id="f-kev"> samo KEV</label>
+  <label><input type="checkbox" id="f-hit"> samo pogođena verzija</label>
+  <input type="search" id="f-q" placeholder="traži CVE ili softver">
+  <span class="dim" id="shown"></span>
+</div>
+
+<div id="list"></div>
+
+<p class="hint">
+  Podatke mijenjaš u istoj datoteci, u dva bloka na dnu: <b>SOFTWARE</b> (što vrtiš) i <b>VULNS</b> (što je objavljeno).
+  Spremi datoteku i osvježi stranicu. Ništa ne ide na internet.
+</p>
+
+<!-- ===== SOFTWARE (što vrtiš) ===== -->
+<script type="text/csv" id="csv-software">
+stroj,softver,verzija,grupa,owner
+node-01,kernel,5.10.0-28,Distro,tim-a@example.com
+node-02,kernel,5.15.0-91,Distro,tim-a@example.com
+node-03,openssl,3.0.11,Distro,tim-a@example.com
+node-04,glibc,2.36.9,Distro,tim-a@example.com
+node-05,sudo,1.9.13,Distro,tim-a@example.com
+node-06,openssh,9.2.0,Distro,tim-a@example.com
+node-07,curl,7.88.1,Distro,tim-a@example.com
+node-08,systemd,252.19,Distro,tim-a@example.com
+node-09,bash,5.2.15,Distro,tim-a@example.com
+node-10,zlib,1.2.13,Distro,tim-a@example.com
+node-11,sudo,1.9.14,Distro,tim-a@example.com
+node-12,kernel,6.1.0-13,Distro,tim-a@example.com
+k8s-master-01,kube-apiserver,1.28.4,Platforma,tim-b@example.com
+k8s-master-02,kube-apiserver,1.28.4,Platforma,tim-b@example.com
+k8s-node-01,kubelet,1.28.4,Platforma,tim-b@example.com
+k8s-node-02,kubelet,1.29.2,Platforma,tim-b@example.com
+k8s-node-03,kubelet,1.28.4,Platforma,tim-b@example.com
+etcd-01,etcd,3.5.9,Platforma,tim-b@example.com
+k8s-node-01,containerd,1.7.11,Platforma,tim-b@example.com
+k8s-node-02,runc,1.1.11,Platforma,tim-b@example.com
+os-compute-01,openstack-nova,27.2.0,Platforma,tim-b@example.com
+os-network-01,openstack-neutron,22.2.2,Platforma,tim-b@example.com
+k8s-node-01,ingress-nginx,1.9.5,Platforma,tim-b@example.com
+k8s-node-02,helm,3.13.2,Platforma,tim-b@example.com
+mon-01,grafana,10.2.3,Alati,tim-c@example.com
+mon-02,prometheus,2.48.1,Alati,tim-c@example.com
+mon-03,loki,2.9.4,Alati,tim-c@example.com
+ci-01,jenkins,2.426.2,Alati,tim-c@example.com
+ci-02,gitlab-runner,16.7.1,Alati,tim-c@example.com
+ops-01,ansible,2.16.3,Alati,tim-c@example.com
+sec-01,vault,1.15.7,Alati,tim-c@example.com
+cd-01,argocd,2.9.3,Alati,tim-c@example.com
+</script>
+
+<!-- ===== VULNS (javno objavljeno; dana_ako = prije koliko dana) ===== -->
+<script type="text/csv" id="csv-vulns">
+cve,softver,pogodene_versije,fiksno_izdanje,cvss,kev,dana_ako,izvor_url
+CVE-2026-10004,vault,<1.15.9,1.15.9,9.2,ne,0,https://example.com/ubuntu/CVE-2026-10004
+CVE-2026-10007,openssh,<9.6.0,9.6.0,9.3,ne,0,https://example.com/jenkins/CVE-2026-10007
+CVE-2026-10010,grafana,>=10.0.0;<10.3.5,10.3.5,8.8,ne,0,https://example.com/ubuntu/CVE-2026-10010
+CVE-2026-10013,openssl,<3.2.1,3.2.1,9.1,ne,0,https://example.com/debian/CVE-2026-10013
+CVE-2026-10016,containerd,<1.7.13,1.7.13,9.6,ne,1,https://example.com/redhat/CVE-2026-10016
+CVE-2026-10019,kubelet,<1.28.7,1.28.7,9.6,da,1,https://example.com/grafana/CVE-2026-10019
+CVE-2026-10022,kernel,<5.10.0-30,5.10.0-30,9.6,da,2,https://example.com/redhat/CVE-2026-10022
+CVE-2026-10025,openstack-nova,<27.2.3,27.2.3,5.2,ne,2,https://example.com/ubuntu/CVE-2026-10025
+CVE-2026-10028,openssl,<3.2.1,3.2.1,7.6,ne,2,https://example.com/nvd/CVE-2026-10028
+CVE-2026-10031,openstack-nova,<27.2.3,27.2.3,9.9,ne,2,https://example.com/nvd/CVE-2026-10031
+CVE-2026-10034,curl,<8.5.0,8.5.0,5.7,ne,3,https://example.com/kubernetes/CVE-2026-10034
+CVE-2026-10037,openstack-nova,<27.2.3,27.2.3,8.0,da,3,https://example.com/grafana/CVE-2026-10037
+CVE-2026-10040,ansible,<2.16.5,2.16.5,9.7,ne,3,https://example.com/jenkins/CVE-2026-10040
+CVE-2026-10043,kernel,>=6.0.0;<6.1.5,6.1.5,9.6,ne,3,https://example.com/kubernetes/CVE-2026-10043
+CVE-2026-10046,kube-apiserver,<1.28.7,1.28.7,5.6,ne,5,https://example.com/jenkins/CVE-2026-10046
+CVE-2026-10049,systemd,<252.22,252.22,9.8,da,5,https://example.com/kubernetes/CVE-2026-10049
+CVE-2026-10052,jenkins,<2.426.3,2.426.3,9.7,ne,6,https://example.com/ubuntu/CVE-2026-10052
+CVE-2026-10055,glibc,<2.37.0,2.38.0,8.8,ne,6,https://example.com/ubuntu/CVE-2026-10055
+CVE-2026-10058,mysql,<8.0.36,8.0.36,5.6,ne,6,https://example.com/jenkins/CVE-2026-10058
+CVE-2026-10061,openssh,<9.6.0,9.6.0,9.4,ne,6,https://example.com/ubuntu/CVE-2026-10061
+CVE-2026-10064,etcd,<3.5.11,3.5.11,8.3,ne,7,https://example.com/nvd/CVE-2026-10064
+CVE-2026-10067,openssl,<3.2.1,3.2.1,5.1,ne,7,https://example.com/jenkins/CVE-2026-10067
+CVE-2026-10070,wordpress,<6.4.2,6.4.2,9.1,ne,7,https://example.com/kubernetes/CVE-2026-10070
+CVE-2026-10073,kernel,<5.10.0-30,5.10.0-30,7.4,da,7,https://example.com/jenkins/CVE-2026-10073
+CVE-2026-10076,wordpress,<6.4.2,6.4.2,6.0,da,8,https://example.com/nvd/CVE-2026-10076
+CVE-2026-10079,runc,<1.1.12,1.1.12,4.4,ne,8,https://example.com/redhat/CVE-2026-10079
+CVE-2026-10082,glibc,<2.37.0,2.38.0,9.8,ne,8,https://example.com/kubernetes/CVE-2026-10082
+CVE-2026-10085,nginx,<1.25.3,1.25.3,9.3,da,8,https://example.com/nvd/CVE-2026-10085
+CVE-2026-10088,openssl,<3.2.1,3.2.1,8.6,ne,10,https://example.com/debian/CVE-2026-10088
+CVE-2026-10091,git,<2.43.0,2.43.0,9.2,ne,10,https://example.com/grafana/CVE-2026-10091
+CVE-2026-10094,jenkins,<2.440.2,2.440.2,4.2,ne,10,https://example.com/grafana/CVE-2026-10094
+CVE-2026-10097,runc,<1.1.12,1.1.12,8.8,ne,10,https://example.com/grafana/CVE-2026-10097
+CVE-2026-10100,bash,<5.2.21,5.2.21,7.9,ne,11,https://example.com/debian/CVE-2026-10100
+CVE-2026-10103,glibc,<2.37.0,2.38.0,9.1,da,11,https://example.com/ubuntu/CVE-2026-10103
+CVE-2026-10106,vault,<1.15.9,1.15.9,8.1,ne,12,https://example.com/redhat/CVE-2026-10106
+CVE-2026-10109,ansible,<2.16.5,2.16.5,7.0,ne,12,https://example.com/jenkins/CVE-2026-10109
+CVE-2026-10112,jenkins,<2.426.3,2.426.3,9.8,ne,13,https://example.com/grafana/CVE-2026-10112
+CVE-2026-10115,git,<2.43.0,2.43.0,9.6,ne,13,https://example.com/ubuntu/CVE-2026-10115
+CVE-2026-10118,curl,<8.5.0,8.5.0,8.0,ne,13,https://example.com/debian/CVE-2026-10118
+CVE-2026-10121,prometheus,<2.49.1,2.49.1,7.5,da,13,https://example.com/nvd/CVE-2026-10121
+CVE-2026-10124,kube-apiserver,<1.28.7,1.28.7,7.0,da,14,https://example.com/kubernetes/CVE-2026-10124
+CVE-2026-10127,containerd,<1.7.13,1.7.13,9.8,da,14,https://example.com/nvd/CVE-2026-10127
+CVE-2026-10130,bash,<5.2.21,5.2.21,7.8,ne,16,https://example.com/grafana/CVE-2026-10130
+CVE-2026-10133,kube-apiserver,<1.28.7,1.28.7,9.2,ne,16,https://example.com/redhat/CVE-2026-10133
+CVE-2026-10136,ansible,<2.16.5,2.16.5,5.8,da,17,https://example.com/debian/CVE-2026-10136
+CVE-2026-10139,zlib,<1.3.0,1.3.0,9.7,ne,17,https://example.com/redhat/CVE-2026-10139
+CVE-2026-10142,etcd,<3.5.11,3.5.11,9.7,ne,18,https://example.com/grafana/CVE-2026-10142
+CVE-2026-10145,sudo,>=1.9.0;<1.9.16,1.9.16,9.3,ne,18,https://example.com/debian/CVE-2026-10145
+CVE-2026-10148,kubelet,<1.28.7,1.28.7,9.3,ne,18,https://example.com/debian/CVE-2026-10148
+CVE-2026-10151,jenkins,<2.440.2,2.440.2,7.2,ne,18,https://example.com/nvd/CVE-2026-10151
+CVE-2026-10154,ansible,<2.16.5,2.16.5,9.7,da,19,https://example.com/kubernetes/CVE-2026-10154
+CVE-2026-10157,helm,<3.14.2,3.14.2,9.6,ne,19,https://example.com/ubuntu/CVE-2026-10157
+CVE-2026-10160,loki,<2.9.6,2.9.6,4.5,ne,20,https://example.com/kubernetes/CVE-2026-10160
+CVE-2026-10163,ingress-nginx,<1.9.6,1.9.6,4.7,ne,20,https://example.com/ubuntu/CVE-2026-10163
+</script>
+
+<script>
+/* ===== LOGIKA-POCETAK ===== */
+var WINDOW_DAYS = 20;
+
+function parseCsv(text) {
+  var lines = text.trim().split(/\r?\n/).filter(function (l) { return l.trim() !== ''; });
+  if (lines.length < 2) return [];
+  var head = lines[0].split(',');
+  return lines.slice(1).map(function (l) {
+    var cells = l.split(',');
+    var row = {};
+    head.forEach(function (h, i) { row[h.trim()] = (cells[i] || '').trim(); });
+    return row;
+  });
+}
+
+function versionParts(v) {
+  return String(v).split(/[.\-_+]/).map(Number).filter(function (n) { return !isNaN(n); });
+}
+
+function compareVersions(a, b) {
+  var A = versionParts(a), B = versionParts(b);
+  for (var i = 0; i < Math.max(A.length, B.length); i++) {
+    var d = (A[i] || 0) - (B[i] || 0);
+    if (d !== 0) return d < 0 ? -1 : 1;
+  }
+  return 0;
+}
+
+function isAffected(version, spec) {
+  return spec.split(';').every(function (one) {
+    var m = one.trim().match(/^(>=|<=|<|>|=)\s*(.+)$/);
+    if (!m) return false;
+    var r = compareVersions(version, m[2]);
+    if (m[1] === '<') return r < 0;
+    if (m[1] === '<=') return r <= 0;
+    if (m[1] === '>') return r > 0;
+    if (m[1] === '>=') return r >= 0;
+    return r === 0;
+  });
+}
+
+function buildEntries(software, vulns, today) {
+  var mine = {};
+  software.forEach(function (s) {
+    (mine[s.softver] = mine[s.softver] || []).push(s);
+  });
+  var out = [];
+  vulns.forEach(function (v) {
+    var days = Number(v.dana_ako);
+    if (!(days >= 0 && days <= WINDOW_DAYS)) return;
+    var hosts = mine[v.softver];
+    if (!hosts) return;
+    var cvss = Number(v.cvss);
+    var hit = hosts.filter(function (h) { return isAffected(h.verzija, v.pogodene_versije); });
+    var kev = String(v.kev).toLowerCase() === 'da';
+    if (cvss < 9 && !kev && hit.length === 0) return;
+    var why = [];
+    if (cvss >= 9) why.push('Critical');
+    if (kev) why.push('KEV');
+    if (hit.length) why.push('pogođena verzija');
+    out.push({
+      cve: v.cve, softver: v.softver, cvss: cvss, kev: kev, days: days,
+      url: v.izvor_url, fixed: v.fiksno_izdanje, spec: v.pogodene_versije,
+      grupa: hosts[0].grupa,
+      hit: hit.map(function (h) { return h.stroj + ' ' + h.verzija; }),
+      installed: hosts.map(function (h) { return h.verzija; }).filter(function (x, i, a) { return a.indexOf(x) === i; }),
+      why: why.join(' + '),
+      date: new Date(today.getTime() - days * 86400000)
+    });
+  });
+  return out.sort(function (a, b) { return a.days - b.days || b.cvss - a.cvss; });
+}
+
+function countersFor(entries) {
+  return {
+    danas: entries.filter(function (e) { return e.days === 0; }).length,
+    tjedan: entries.filter(function (e) { return e.days <= 6; }).length,
+    sve: entries.length
+  };
+}
+/* ===== LOGIKA-KRAJ ===== */
+
+var SOFTWARE = parseCsv(document.getElementById('csv-software').textContent);
+var VULNS = parseCsv(document.getElementById('csv-vulns').textContent);
+var TODAY = new Date(new Date().setHours(0, 0, 0, 0));
+var ALL = buildEntries(SOFTWARE, VULNS, TODAY);
+
+function esc(s) {
+  return String(s).replace(/[&<>"]/g, function (c) {
+    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c];
+  });
+}
+
+function fillSelect(sel, values, label) {
+  sel.innerHTML = '<option value="">' + label + '</option>' + values.map(function (v) {
+    return '<option>' + esc(v) + '</option>';
+  }).join('');
+}
+
+function render() {
+  var group = document.getElementById('f-group').value;
+  var soft = document.getElementById('f-soft').value;
+  var onlyKev = document.getElementById('f-kev').checked;
+  var onlyHit = document.getElementById('f-hit').checked;
+  var q = document.getElementById('f-q').value.trim().toLowerCase();
+
+  var rows = ALL.filter(function (e) {
+    if (group && e.grupa !== group) return false;
+    if (soft && e.softver !== soft) return false;
+    if (onlyKev && !e.kev) return false;
+    if (onlyHit && e.hit.length === 0) return false;
+    if (q && (e.cve + ' ' + e.softver).toLowerCase().indexOf(q) === -1) return false;
+    return true;
+  });
+
+  var c = countersFor(ALL);
+  document.getElementById('counters').innerHTML =
+    '<div><b>' + c.danas + '</b>danas</div>' +
+    '<div><b>' + c.tjedan + '</b>7 dana</div>' +
+    '<div><b>' + c.sve + '</b>20 dana</div>' +
+    '<div><b>' + ALL.filter(function (e) { return e.hit.length; }).length + '</b>pogođena verzija</div>' +
+    '<div><b>' + ALL.filter(function (e) { return e.kev; }).length + '</b>KEV</div>';
+
+  var max = 0;
+  var perDay = [];
+  for (var d = WINDOW_DAYS; d >= 0; d--) {
+    var n = ALL.filter(function (e) { return e.days === d; }).length;
+    max = Math.max(max, n);
+    perDay.push({ day: d, n: n });
+  }
+  document.getElementById('chart').innerHTML = perDay.map(function (p) {
+    var h = max ? Math.round(p.n / max * 44) : 2;
+    return '<span class="' + (p.day === 0 ? 'today' : '') + '" style="height:' + h + 'px" title="' +
+      (p.day === 0 ? 'danas' : 'prije ' + p.day + ' dana') + ': ' + p.n + '"></span>';
+  }).join('');
+
+  var byGroup = {};
+  rows.forEach(function (e) { (byGroup[e.grupa] = byGroup[e.grupa] || []).push(e); });
+
+  var html = Object.keys(byGroup).sort().map(function (g) {
+    var body = byGroup[g].map(function (e) {
+      return '<tr><td class="' + (e.cvss >= 9 ? 'hi' : '') + '">' + esc(e.cve) + '</td>' +
+        '<td>' + esc(e.softver) + ' <span class="dim">' + esc(e.spec) + '</span></td>' +
+        '<td>' + esc(e.installed.join(', ')) + '</td>' +
+        '<td class="' + (e.cvss >= 9 ? 'hi' : '') + '">' + e.cvss.toFixed(1) + '</td>' +
+        '<td class="' + (e.kev ? 'kev' : 'dim') + '">' + (e.kev ? 'KEV' : '-') + '</td>' +
+        '<td class="' + (e.hit.length ? 'hi' : 'ok') + '">' +
+          (e.hit.length ? 'DA: ' + esc(e.hit.join(', ')) : 'ne pogođeno') + '</td>' +
+        '<td class="ok">' + esc(e.fixed) + '</td>' +
+        '<td class="dim">' + e.date.toLocaleDateString('hr-HR') + ' (' + esc(e.why) + ')</td>' +
+        '<td><a href="' + esc(e.url) + '">advisory</a></td></tr>';
+    }).join('');
+    return '<h2>' + esc(g) + ' · ' + byGroup[g].length + '</h2>' +
+      '<table><tr><th>CVE</th><th>softver / opseg</th><th>moje verzije</th><th>CVSS</th><th>KEV</th>' +
+      '<th>pogođeni stroj</th><th>fiksno u</th><th>kad / zašto</th><th>link</th></tr>' + body + '</table>';
+  }).join('');
+
+  document.getElementById('list').innerHTML = html || '<p class="empty">Nema zapisa za ovaj filter.</p>';
+  document.getElementById('shown').textContent = 'prikazano ' + rows.length + ' od ' + ALL.length;
+}
+
+document.getElementById('today').textContent = TODAY.toLocaleDateString('hr-HR');
+fillSelect(document.getElementById('f-group'), SOFTWARE.map(function (s) { return s.grupa; })
+  .filter(function (x, i, a) { return a.indexOf(x) === i; }).sort(), 'sve grupe');
+fillSelect(document.getElementById('f-soft'), ALL.map(function (e) { return e.softver; })
+  .filter(function (x, i, a) { return a.indexOf(x) === i; }).sort(), 'sav softver');
+['f-group', 'f-soft', 'f-kev', 'f-hit', 'f-q'].forEach(function (id) {
+  document.getElementById(id).addEventListener('input', render);
+});
+render();
+</script>
+</body>
+</html>
