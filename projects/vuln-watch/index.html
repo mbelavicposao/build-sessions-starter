@@ -22,9 +22,13 @@
   table { width: 100%; border-collapse: collapse; margin-top: 6px; }
   th, td { text-align: left; padding: 5px 8px; border-bottom: 1px solid #232c38; vertical-align: top; }
   th { color: #7d8896; font-weight: normal; font-size: 12px; }
+  th.s { cursor: pointer; white-space: nowrap; }
+  th.s:hover { color: #dfe6ee; }
+  th.a { color: #8fb7e0; }
   .hi { color: #ff8a8a; font-weight: bold; }
   .kev { color: #ffce54; }
   .ok { color: #7bd88f; }
+  .nofix { color: #ff9f6e; }
   .dim { color: #7d8896; }
   .empty { color: #7d8896; padding: 18px 0; }
   a { color: #78b6ff; }
@@ -44,7 +48,8 @@
   <label>Softver <select id="f-soft"></select></label>
   <label><input type="checkbox" id="f-kev"> samo KEV</label>
   <label><input type="checkbox" id="f-hit"> samo pogođena verzija</label>
-  <input type="search" id="f-q" placeholder="traži CVE ili softver">
+  <input type="search" id="f-q" placeholder="traži CVE, softver ili opis">
+  <span class="dim">klikni naslov stupca za sortiranje, opet = obrnuti smjer</span>
   <span class="dim" id="shown"></span>
 </div>
 
@@ -365,6 +370,45 @@ function countersFor(entries) {
     sve: entries.length
   };
 }
+
+var COLS = [
+  ['cve', 'CVE'], ['softver', 'moj softver / opseg'], ['proizvod', 'iz NVD objave: proizvod i opis'],
+  ['installed', 'moje verzije'], ['cvss', 'CVSS'], ['kev', 'KEV'], ['hit', 'pogođeni stroj'],
+  ['fixed', 'fiks dostupan'], ['days', 'kad / zašto']
+];
+var NUM = { cvss: 1, kev: 1, hit: 1, days: 1 };
+var SORT = { key: '', dir: 1 };
+
+function sortBy(key) {
+  if (SORT.key === key) SORT.dir = -SORT.dir;
+  else { SORT.key = key; SORT.dir = (key === 'days' || key === 'cve' || key === 'softver' || key === 'proizvod' || key === 'installed') ? 1 : -1; }
+  render();
+}
+
+function val(e, key) {
+  if (key === 'kev') return e.kev ? 1 : 0;
+  if (key === 'hit') return e.hit.length;
+  if (key === 'fixed') return e.fixed ? 1 : 0;
+  if (key === 'installed') return e.installed.join(' ');
+  return e[key];
+}
+
+function cmp(a, b) {
+  var x = val(a, SORT.key), y = val(b, SORT.key), r;
+  if (NUM[SORT.key]) r = x - y;
+  else { x = String(x).toLowerCase(); y = String(y).toLowerCase(); r = x < y ? -1 : (x > y ? 1 : 0); }
+  if (r === 0) r = b.cvss - a.cvss;
+  if (r === 0) r = a.days - b.days;
+  return r * SORT.dir;
+}
+
+function head() {
+  return COLS.map(function (c) {
+    var on = SORT.key === c[0];
+    return '<th class="s' + (on ? ' a' : '') + '" onclick="sortBy(\'' + c[0] + '\')" ' +
+      'title="sortiraj po ovom stupcu">' + c[1] + (on ? (SORT.dir < 0 ? ' &#9660;' : ' &#9650;') : '') + '</th>';
+  }).join('') + '<th>linkovi</th>';
+}
 /* ===== LOGIKA-KRAJ ===== */
 
 var SOFTWARE = parseCsv(document.getElementById('csv-software').textContent);
@@ -423,6 +467,7 @@ function render() {
 
   var byGroup = {};
   rows.forEach(function (e) { (byGroup[e.grupa] = byGroup[e.grupa] || []).push(e); });
+  Object.keys(byGroup).forEach(function (g) { if (SORT.key) byGroup[g].sort(cmp); });
 
   var html = Object.keys(byGroup).sort().map(function (g) {
     var body = byGroup[g].map(function (e) {
@@ -435,14 +480,13 @@ function render() {
         '<td class="' + (e.kev ? 'kev' : 'dim') + '">' + (e.kev ? 'KEV' : '-') + '</td>' +
         '<td class="' + (e.hit.length ? 'hi' : 'dim') + '">' +
           (e.hit.length ? 'DA: ' + esc(e.hit.join(', ')) : 'ne pogođeno') + '</td>' +
-        '<td class="' + (e.fixed ? 'ok' : 'dim') + '">' + (e.fixed ? esc(e.fixed) : '-') + '</td>' +
+        '<td class="' + (e.fixed ? 'ok' : 'nofix') + '">' + (e.fixed ? 'da - ' + esc(e.fixed) : 'ne - NVD ne navodi izdanje') + '</td>' +
         '<td class="dim">' + e.date.toLocaleDateString('hr-HR') + ' (' + esc(e.why) + ')</td>' +
         '<td><a href="' + esc(e.nvd) + '" target="_blank" rel="noopener">CVSS</a> · ' +
           '<a href="' + esc(e.url) + '" target="_blank" rel="noopener">izvor</a></td></tr>';
     }).join('');
     return '<h2>' + esc(g) + ' · ' + byGroup[g].length + '</h2>' +
-      '<table><tr><th>CVE</th><th>moj softver / opseg</th><th>iz NVD objave: proizvod i opis</th><th>moje verzije</th><th>CVSS</th><th>KEV</th>' +
-      '<th>pogođeni stroj</th><th>fiksno u</th><th>kad / zašto</th><th>linkovi</th></tr>' + body + '</table>';
+      '<table><tr>' + head() + '</tr>' + body + '</table>';
   }).join('');
 
   document.getElementById('list').innerHTML = html || '<p class="empty">Nema zapisa za ovaj filter.</p>';

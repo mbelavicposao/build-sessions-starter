@@ -25,3 +25,7 @@ Vrijedi zapamtiti: NVD za 123 prijave (najviše kernel) još nema strojno čitlj
 ## Korak 7 - redak i link moraju govoriti o istome
 Dodana su dva stupca koja dolaze iz iste NVD objave kao i CVSS i link: `izvor_proizvod` (vendor / product) i `opis` (prvih ~150 znakova). `check.js` sada za svaki redak traži taj proizvod i taj opis u sirovom NVD odgovoru za isti CVE - 22/22 testova prošlo.
 Vrijedi zapamtiti: "softver" u retku je skraćenica s moga popisa (npr. grafana), a NVD prijava govori o "Grafana / Grafana Enterprise" - zato se u retku mora prikazati i ime iz izvora, inače/link djeluje kao da ne pripada tom retku.
+
+## Korak 7 - fiks i sortiranje
+Stupac "fiks dostupan" sada izričito kaže "da - <izdanje>" ili "ne - NVD ne navodi izdanje" (od 35 zapisa na listi 34 ima fix), a svaki naslov stupca je kliknut za sortiranje u oba smjera. `check.js` je narastao na 27 testova: provjerava da svih 9 stupaca ima klik i da svaki sortira u oba smjera.
+Vrijedi zapamtiti: logika koju treba dokazati testom stoji između markera LOGIKA-POCETAK/KRAJ u index.html, zato je tamo premješteno i sortiranje; test ne može provjeriti izgled, samo ponašanje.

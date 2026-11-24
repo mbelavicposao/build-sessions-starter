@@ -34,7 +34,8 @@ if (!logicMatch) throw new Error('nema LOGIKA bloka u index.html');
 
 var api = new Function(logicMatch[1] +
   '; return { parseCsv: parseCsv, compareVersions: compareVersions, isAffected: isAffected,' +
-  ' buildEntries: buildEntries, countersFor: countersFor, WINDOW_DAYS: WINDOW_DAYS };')();
+  ' buildEntries: buildEntries, countersFor: countersFor, WINDOW_DAYS: WINDOW_DAYS,' +
+  ' cmp: cmp, val: val, head: head, SORT: SORT, COLS: COLS };')();
 
 var software = api.parseCsv(block('csv-software'));
 var vulns = api.parseCsv(block('csv-vulns'));
@@ -238,6 +239,48 @@ if (!growable) throw new Error('nema zapisa za test nove verzije');
 var grown = software.concat([{ stroj: 'novi-01', softver: growable.softver, verzija: growVer, grupa: 'Alati', owner: 'tim-n@example.com' }]);
 check(growable.cve + ' se POJAVI kad novi stroj ' + growVer + ' dođe na popis',
   has(api.buildEntries(grown, vulns, today), growable.cve), 'CVSS ' + growable.cvss + ' < 9, bez KEV, samo zbog verzije');
+
+// ===== 7) fiks dostupan + sortiranje po stupcima =====
+var withFix = entries.filter(function (e) { return e.fixed; });
+var noFix = entries.filter(function (e) { return !e.fixed; });
+check('stranica kaze je li fiks dostupan', html.indexOf('ne - NVD ne navodi izdanje') >= 0 && html.indexOf('da - ') >= 0,
+  's fiksom ' + withFix.length + ', bez fiksa ' + noFix.length);
+
+api.SORT.key = ''; api.SORT.dir = 1;
+var hdr = api.head();
+var noClick = [], noKey = [];
+for (i = 0; i < api.COLS.length; i++) {
+  if (hdr.indexOf('sortBy(\'' + api.COLS[i][0] + '\')') < 0) noClick.push(api.COLS[i][0]);
+  if (typeof entries[0][api.COLS[i][0]] === 'undefined') noKey.push(api.COLS[i][0]);
+}
+check('svaki stupac u naslovu je kliknut za sortiranje',
+  noClick.length === 0 && hdr.split('<th class="s"').length - 1 === api.COLS.length,
+  'kliknutih naslova: ' + (hdr.split('<th class="s"').length - 1) + ' / ' + api.COLS.length + ', bez kliknutja: ' + noClick.join(' '));
+check('svaki kljuc za sortiranje postoji u zapisu', noKey.length === 0, 'nema ga: ' + noKey.join(' '));
+
+var sortBad = [];
+for (i = 0; i < api.COLS.length; i++) {
+  var key = api.COLS[i][0];
+  for (var dir = -1; dir <= 1; dir += 2) {
+    api.SORT.key = key; api.SORT.dir = dir;
+    var s = entries.slice(0).sort(api.cmp);
+    for (var j = 1; j < s.length; j++) {
+      var x = api.val(s[j - 1], key), y = api.val(s[j], key);
+      x = (typeof x === 'number') ? x : String(x).toLowerCase();
+      y = (typeof y === 'number') ? y : String(y).toLowerCase();
+      if (dir < 0 ? x < y : x > y) { sortBad.push(key + ' ' + (dir < 0 ? 'dolje' : 'gore')); break; }
+    }
+  }
+}
+check('svaki stupac sortira u oba smjera', sortBad.length === 0, 'krivo: ' + sortBad.join(' '));
+
+api.SORT.key = 'fixed'; api.SORT.dir = -1;
+var byFix = entries.slice(0).sort(api.cmp);
+check('sort po "fiks dostupan" - s fiksom prvi', withFix.length > 0 && (function () {
+  for (var k = 0; k < withFix.length; k++) if (!byFix[k].fixed) return false;
+  return true;
+})(), 's fiksom ' + withFix.length + ' od ' + entries.length);
+api.SORT.key = ''; api.SORT.dir = 1;
 
 WScript.Echo('');
 WScript.Echo('rezultat: ' + (fails === 0 ? 'SVI TESTOVI PROSLI' : fails + ' TEST(A) NIJE PROSLIO') +

@@ -8,9 +8,9 @@ Jedna HTML stranica koju otvorim dvoklikom i vidim samo javno objavljene ranjivo
 - Izvor ranjivosti: NVD API (`services.nvd.nist.gov`) i CISA KEV katalog. Osvježava se ručno s `bash fetch.sh` pa `powershell -File refresh.ps1`; otvaranje stranice ne ide na internet.
 - Filtrira: softver je s popisa **i** (CVSS ≥ 9.0 **ili** moja verzija je pogođena **ili** je u KEV katalogu).
 - Groupira po grupi: Distro/kernel, Platforma (K8s, OpenStack, Docker), Alati (Grafana, Jenkins, Ansible...).
-- Za svaki zapis: CVE, softver + opseg pogodjenih verzija, **vendor / product i opis iz te iste NVD objave** (da vidim da redak i link govore o istoj stvari), moja verzija, CVSS (s verzijom tablice), KEV da/ne, datum objave, link na NVD i na advisory izvora, u koje izdanje je fixano.
+- Za svaki zapis: CVE, softver + opseg pogodjenih verzija, **vendor / product i opis iz te iste NVD objave** (da vidim da redak i link govore o istoj stvari), moja verzija, CVSS (s verzijom tablice), KEV da/ne, datum objave, link na NVD i na advisory izvora, te je li fix objavljen i u koje izdanje (ili "ne - NVD ne navodi izdanje").
 - Gore brojači: danas / 7 dana / 20 dana, graf po danima, i napomena koliko prijava još nema strojno čitljiv opseg verzija.
-- Filtri po grupi, softveru, "samo KEV", "samo pogođena verzija", plus pretraga.
+- Filtri po grupi, softveru, "samo KEV", "samo pogođena verzija", plus pretraga. Klik na naslov stupca sortira, drugi klik obrće smjer.
 - Sve se računa u samoj stranici, bez servera i bez interneta.
 
 ## OUT (što namjerno nije dio)
@@ -39,5 +39,6 @@ Ne diram ga ručno - generira ga `refresh.ps1` iz `data/raw/*.json` i `data/kev.
 - Redak i link govore isto: stupac "iz NVD objave" ima vendor / product i opis te iste prijave, pa po njemu prepoznajem na što se link odnosi.
 - Brojači gore pokazuju danas / 7 dana / 20 dana i brojevi se slažu s tablicom ispod.
 - Mogu filtrirati po grupi, softveru, KEV i "samo pogođena verzija".
+- Vidim je li fix objavljen: ili "da - <izdanje>" ili "ne - NVD ne navodi izdanje", i sortiram klikom na naslov stupca.
 - Test: u blok SOFTWARE upišem verziju koja je u opsegu → zapis se pojavi; promijenim verziju na fixanu → nestane s liste.
 - `cscript //nologo check.js` prolazi bez greške.
