@@ -130,6 +130,9 @@ foreach ($file in (Get-ChildItem 'data/raw/*.json' | Sort-Object Name)) {
     }
 
     # koji od mojih softvera je spomenut u ovoj objavi
+    $opis = [regex]::Match($c, '"lang":"en","value":"((?:[^"\\]|\\.)*)"').Groups[1].Value
+    $opis = (Clean ($opis -replace '\\[nrtuv][0-9a-fA-F]*', ' '))
+    if ($opis.Length -gt 150) { $opis = $opis.Substring(0, 147) + '...' }
     foreach ($am in [regex]::Matches($c, '"vendor":"([^"]*)","product":"([^"]*)"(?:(?!"vendor":).)*?"versions":\[([^\]]*)\]')) {
       $vendor = $am.Groups[1].Value
       $product = $am.Groups[2].Value
@@ -192,14 +195,17 @@ foreach ($file in (Get-ChildItem 'data/raw/*.json' | Sort-Object Name)) {
         continue
       }
       $key = $cve + '|' + $hitToken
+      $proizvod = Clean ("{0} / {1}" -f $vendor, $product)
       if ($rows.ContainsKey($key)) {
         $old = $rows[$key]
         if ($spec -notlike ('*' + $spec + '*')) { $old.spec = ($old.spec + '|' + $spec) }
+        if ($old.proizvod -notlike ('*' + $proizvod + '*')) { $old.proizvod = ($old.proizvod + ' + ' + $proizvod) }
         if ($best.score -gt $old.cvss) { $old.cvss = $best.score; $old.cver = $best.ver }
       }
       else {
         $rows[$key] = [pscustomobject]@{
-          cve = $cve; softver = $hitToken; spec = $spec; fixed = $fixed; date = $pub; days = $days
+          cve = $cve; softver = $hitToken; proizvod = $proizvod; opis = $opis
+          spec = $spec; fixed = $fixed; date = $pub; days = $days
           cvss = $best.score; cver = $best.ver; kev = $(if ($kevIds.ContainsKey($cve)) { 'da' } else { 'ne' }); url = $url
         }
       }
@@ -211,14 +217,14 @@ $list = @($rows.Values | Sort-Object @{Expression = 'days'; Descending = $false 
 
 # --- 5) CSV za index.html + upis u blok ---
 $lines = New-Object System.Collections.ArrayList
-[void]$lines.Add('cve,softver,pogodene_versije,fiksno_izdanje,cvss,cvss_ver,kev,datum,izvor_url,nvd_url')
+[void]$lines.Add('cve,softver,izvor_proizvod,pogodene_versije,fiksno_izdanje,cvss,cvss_ver,kev,datum,izvor_url,nvd_url,opis')
 foreach ($r in $list) {
   $u = $r.url
   if ($u -eq '') { $u = 'https://nvd.nist.gov/vuln/detail/' + $r.cve }
   [void]$lines.Add((
-      $r.cve, $r.softver, (Clean $r.spec), (Clean $r.fixed),
+      $r.cve, $r.softver, (Clean $r.proizvod), (Clean $r.spec), (Clean $r.fixed),
       $r.cvss.ToString('0.0', $culture), $r.cver, $r.kev, $r.date,
-      (Clean $u), ('https://nvd.nist.gov/vuln/detail/' + $r.cve)) -join ',')
+      (Clean $u), ('https://nvd.nist.gov/vuln/detail/' + $r.cve), (Clean $r.opis)) -join ',')
 }
 $csv = $lines -join "`n"
 [IO.File]::WriteAllText((Join-Path (Get-Location) 'data/vulns.csv'), $csv, (New-Object Text.UTF8Encoding($false)))

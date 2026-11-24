@@ -21,3 +21,7 @@ Vrijedi zapamtiti: Chrome i Edge se u ovoj sesiji ne dižu, pa izgled stranice i
 ## Korak 7 - korisno: CVSS mora biti stvaran
 Izbačeni izmišljeni podaci o propustima. `fetch.sh` povuče NVD API (24 keyword upita, zadnjih 20 dana) i CISA KEV katalog u `data/`, `refresh.ps1` od toga napravi `data/vulns.csv` i upiše ga u `index.html` (173 prijave, 1 KEV, svaki redak ima link na NVD i advisory izvora). `check.js` prepisan: provjerava da se svaki CVSS broj nalazi u sirovom NVD odgovoru za taj CVE i da KEV zastavica odgovara CISA katalogu u oba smjera - 20/20 testova prošlo.
 Vrijedi zapamtiti: NVD za 123 prijave (najviše kernel) još nema strojno čitljiv opseg verzija, samo commit hash, pa se ne može izračunati pogađa li tebe - alat to kaže u napomeni umjesto da nagađa; browserove stranice NVD-a ovdje ne mogu otvoriti (Cloudflare), provjereno je samo da linkovi vraćaju 200 i da brojevi dolaze iz API odgovora.
+
+## Korak 7 - redak i link moraju govoriti o istome
+Dodana su dva stupca koja dolaze iz iste NVD objave kao i CVSS i link: `izvor_proizvod` (vendor / product) i `opis` (prvih ~150 znakova). `check.js` sada za svaki redak traži taj proizvod i taj opis u sirovom NVD odgovoru za isti CVE - 22/22 testova prošlo.
+Vrijedi zapamtiti: "softver" u retku je skraćenica s moga popisa (npr. grafana), a NVD prijava govori o "Grafana / Grafana Enterprise" - zato se u retku mora prikazati i ime iz izvora, inače/link djeluje kao da ne pripada tom retku.

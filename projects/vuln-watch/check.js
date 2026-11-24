@@ -47,6 +47,11 @@ function check(name, ok, detail) {
   WScript.Echo((ok ? 'PASS ' : 'FAIL ') + name + (detail ? '  -> ' + detail : ''));
   if (!ok) fails++;
 }
+// cijeli JS iz stranice mora se parsirati bez sintaksne greške (render() nije u LOGIKA bloku)
+var pageJs = html.match(/<script>([\s\S]*?)<\/script>/);
+var jsErr = '';
+try { if (!pageJs) throw new Error('nema <script> bloka'); new Function(pageJs[1]); } catch (err) { jsErr = err.message; }
+check('JS u stranici se parsira bez sintaksne greške', jsErr === '', jsErr);
 function parseDate(s) {
   var m = String(s).match(/^(\d{4})-(\d{2})-(\d{2})$/);
   return m ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])) : null;
@@ -72,6 +77,8 @@ for (i = 0; i < vulns.length; i++) {
   else if (v.pogodene_versije === '' || v.pogodene_versije.indexOf(' ') >= 0 || /[<>=]/.test(v.pogodene_versije) === false) why = 'raspon';
   else if (isNaN(Number(v.cvss)) || Number(v.cvss) < 0 || Number(v.cvss) > 10) why = 'CVSS';
   else if (!/^[34]\.[01](\.[0-9])?$/.test(v.cvss_ver)) why = 'verzija CVSS: ' + v.cvss_ver;
+  else if (!v.izvor_proizvod || v.izvor_proizvod.indexOf('/') < 0) why = 'izvor_proizvod';
+  else if (!v.opis || v.opis.length < 20) why = 'opis';
   else if (v.kev !== 'da' && v.kev !== 'ne') why = 'kev';
   else if (!parseDate(v.datum)) why = 'datum';
   else if (v.nvd_url !== 'https://nvd.nist.gov/vuln/detail/' + v.cve) why = 'nvd_url';
@@ -103,9 +110,17 @@ var km = /"cveID": *"([A-Z0-9-]+)"/g, kmMatch;
 while ((kmMatch = km.exec(kevText)) !== null) kevIds[kmMatch[1]] = 1;
 check('data/kev.json sadrži KEV zapise', function () { var n = 0; for (var k in kevIds) n++; return n; }() > 100, 'CVE-ova: ' + (function () { var n = 0; for (var k in kevIds) n++; return n; })());
 
-// svaki CVE iz tablice mora biti u NVD odgovoru, s tom istom ocjenom
+// svaki CVE iz tablice mora biti u NVD odgovoru, s tom istom ocjenom, proizvodom i opisom
+function norm(s) {
+  return String(s).replace(/\\[nrtuv][0-9a-fA-F]*/g, ' ').replace(/[",]/g, ' ').replace(/\s+/g, ' ');
+}
 var want = {};
-vulns.forEach(function (v) { want[v.cve + '|' + v.softver] = { cve: v.cve, score: Number(v.cvss), found: false, scored: false }; });
+vulns.forEach(function (v) {
+  want[v.cve + '|' + v.softver] = {
+    cve: v.cve, score: Number(v.cvss), found: false, scored: false,
+    proizvod: v.izvor_proizvod, opis: v.opis, prodOk: false, opisOk: false
+  };
+});
 var rawIds = {};
 for (var f = 0; f < rawFiles.length; f++) {
   var text = readUtf8(rawFiles[f]);
@@ -115,23 +130,46 @@ for (var f = 0; f < rawFiles.length; f++) {
     if (!idm) continue;
     var id = idm[1];
     rawIds[id] = 1;
+    var chunkNorm = norm(chunks[c]);
     var scores = chunks[c].match(/"baseScore":[0-9.]+/g);
-    if (!scores) continue;
     for (var w in want) {
-      if (want[w].cve !== id || want[w].scored) continue;
-      for (var s = 0; s < scores.length; s++) {
-        if (Number(scores[s].replace(/[^0-9.]/g, '')) === want[w].score) { want[w].found = true; want[w].scored = true; break; }
+      var e = want[w];
+      if (e.cve !== id) continue;
+      if (!e.scored && scores) {
+        for (var s = 0; s < scores.length; s++) {
+          if (Number(scores[s].replace(/[^0-9.]/g, '')) === e.score) { e.found = true; e.scored = true; break; }
+        }
+      }
+      if (!e.prodOk) {
+        var parts = e.proizvod.split(' + ');
+        var all = parts.length > 0;
+        for (var p = 0; p < parts.length; p++) {
+          var vp = parts[p].split(' / ');
+          if (chunkNorm.indexOf(norm(vp[0])) < 1 || chunkNorm.indexOf(norm(vp[1] || vp[0])) < 1) { all = false; break; }
+        }
+        e.prodOk = all;
+      }
+      if (!e.opisOk) {
+        var lead = norm(e.opis).replace(/^\s+|\s+$/g, '').substring(0, 60);
+        e.opisOk = lead.length > 20 && chunkNorm.indexOf(lead) >= 0;
       }
     }
   }
 }
-var notInRaw = [], wrongScore = [];
+var notInRaw = [], wrongScore = [], wrongProd = [], wrongOpis = [];
 for (var key in want) {
-  if (!want[key].found) { (rawIds[want[key].cve] ? wrongScore : notInRaw).push(key); }
+  var w2 = want[key];
+  if (!w2.found) { (rawIds[w2.cve] ? wrongScore : notInRaw).push(key); }
+  if (!w2.prodOk) wrongProd.push(key + ' <- ' + w2.proizvod);
+  if (!w2.opisOk) wrongOpis.push(key + ' <- ' + String(w2.opis).substring(0, 50));
 }
 check('svaki CVSS u tablici postoji u sirovom NVD odgovoru', notInRaw.length === 0 && wrongScore.length === 0,
   'nema ga u feedu: ' + notInRaw.length + ', ocjena se ne podudara: ' + wrongScore.length +
   (notInRaw.length ? ' (prvi: ' + notInRaw[0] + ')' : '') + (wrongScore.length ? ' (prvi: ' + wrongScore[0] + ')' : ''));
+check('proizvod iz retka je onaj iz NVD objave (vendor / product)', wrongProd.length === 0,
+  wrongProd.length + ' (prvi: ' + (wrongProd[0] || '') + ')');
+check('opis u retku je doslovno iz te NVD objave', wrongOpis.length === 0,
+  wrongOpis.length + ' (prvi: ' + (wrongOpis[0] || '') + ')');
 
 var kevYes = vulns.filter(function (v) { return v.kev === 'da'; });
 var kevNoButListed = vulns.filter(function (v) { return v.kev !== 'da' && kevIds[v.cve]; });
