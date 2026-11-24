@@ -1,0 +1,34 @@
+prozor: 2026-11-04 .. 2026-11-24
+--- CISA KEV ---
+kev.json ok 46886 B
+linux kernel -> HTTP 200, ukupno 539, 2444567 B
+openssl -> HTTP 200, ukupno 25, 87959 B
+glibc -> HTTP 200, ukupno 3, 10939 B
+sudo -> HTTP 200, ukupno 3, 10545 B
+  ... pricekaj 32 s (NVD limit)
+openssh -> HTTP 200, ukupno 1, 6739 B
+curl -> HTTP 200, ukupno 13, 41513 B
+systemd -> HTTP 200, ukupno 3, 11834 B
+bash -> HTTP 200, ukupno 10, 35452 B
+  ... pricekaj 32 s (NVD limit)
+zlib -> HTTP 200, ukupno 8, 27278 B
+kubernetes -> HTTP 200, ukupno 38, 109885 B
+etcd -> HTTP 200, ukupno 1, 3936 B
+containerd -> HTTP 200, ukupno 1, 4201 B
+  ... pricekaj 32 s (NVD limit)
+runc -> HTTP 200, ukupno 0, 146 B
+openstack -> HTTP 200, ukupno 3, 9264 B
+ingress-nginx -> HTTP 200, ukupno 1, 2966 B
+helm -> HTTP 200, ukupno 7, 22580 B
+  ... pricekaj 32 s (NVD limit)
+grafana -> HTTP 200, ukupno 11, 25371 B
+prometheus -> HTTP 200, ukupno 1, 3273 B
+loki -> HTTP 200, ukupno 0, 146 B
+jenkins -> HTTP 200, ukupno 1, 3746 B
+  ... pricekaj 32 s (NVD limit)
+gitlab -> HTTP 200, ukupno 46, 109508 B
+ansible -> HTTP 200, ukupno 25, 150828 B
+vault -> HTTP 200, ukupno 19, 50662 B
+argocd -> HTTP 200, ukupno 0, 146 B
+  ... pricekaj 32 s (NVD limit)
+gotovo

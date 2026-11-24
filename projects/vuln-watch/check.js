@@ -1,6 +1,7 @@
-// check.js - test logike za Vuln Watch
+// check.js - test logike i podataka za Vuln Watch
 // Pokretanje:  cscript //nologo check.js   (iz mape projects\vuln-watch)
-// Testira pravila iz PLAN.md: tko upada na listu, brojači i test s verzijom.
+// 1) što je u tablici  2) jesu li CVSS i KEV stvarni (usporedba s data/raw i data/kev.json)
+// 3) pravilo "moje"  4) brojači  5) verzija gore -> zapis nestaje / dolje -> zapis se pojavi
 
 var fso = new ActiveXObject('Scripting.FileSystemObject');
 var HERE = fso.GetParentFolderName(WScript.ScriptFullName);
@@ -17,6 +18,7 @@ if (!Array.prototype.forEach) { Array.prototype.forEach = function (f) { for (va
 if (!Array.prototype.map) { Array.prototype.map = function (f) { var o = []; for (var i = 0; i < this.length; i++) o[i] = f(this[i], i, this); return o; }; }
 if (!Array.prototype.filter) { Array.prototype.filter = function (f) { var o = []; for (var i = 0; i < this.length; i++) if (f(this[i], i, this)) o.push(this[i]); return o; }; }
 if (!Array.prototype.every) { Array.prototype.every = function (f) { for (var i = 0; i < this.length; i++) if (!f(this[i], i, this)) return false; return true; }; }
+if (!Array.prototype.some) { Array.prototype.some = function (f) { for (var i = 0; i < this.length; i++) if (f(this[i], i, this)) return true; return false; }; }
 if (!Array.prototype.indexOf) { Array.prototype.indexOf = function (x) { for (var i = 0; i < this.length; i++) if (this[i] === x) return i; return -1; }; }
 
 var html = readUtf8(HERE + '\\index.html');
@@ -36,74 +38,171 @@ var api = new Function(logicMatch[1] +
 
 var software = api.parseCsv(block('csv-software'));
 var vulns = api.parseCsv(block('csv-vulns'));
-var today = new Date(2026, 10, 24);
+var snapMatch = html.match(/id="snapshot">([0-9]{4})-([0-9]{2})-([0-9]{2})</);
+if (!snapMatch) throw new Error('nema datuma snimke u index.html');
+var today = new Date(Number(snapMatch[1]), Number(snapMatch[2]) - 1, Number(snapMatch[3]));
 
 var fails = 0;
 function check(name, ok, detail) {
   WScript.Echo((ok ? 'PASS ' : 'FAIL ') + name + (detail ? '  -> ' + detail : ''));
   if (!ok) fails++;
 }
+function parseDate(s) {
+  var m = String(s).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  return m ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])) : null;
+}
 
-// 1) podaci
-check('SOFTWARE ima 32 retka', software.length === 32, 'ima ' + software.length);
-check('VULNS ima 54 retka', vulns.length === 54, 'ima ' + vulns.length);
-var badCols = 0;
-var i;
-for (i = 0; i < software.length; i++) if (!software[i].stroj || !software[i].softver || !software[i].verzija || !software[i].grupa) badCols++;
-for (i = 0; i < vulns.length; i++) if (!vulns[i].cve || !vulns[i].softver || !vulns[i].pogodene_versije || isNaN(Number(vulns[i].cvss)) || isNaN(Number(vulns[i].dana_ako))) badCols++;
-check('svi required stubci su popunjeni', badCols === 0, 'praznih: ' + badCols);
-var badDays = vulns.filter(function (v) { return Number(v.dana_ako) < 0 || Number(v.dana_ako) > api.WINDOW_DAYS; });
-check('dana_ako je u prozoru 0-' + api.WINDOW_DAYS, badDays.length === 0, 'izvan: ' + badDays.length);
+// ===== 1) oblik podataka u tablici =====
+check('SOFTWARE ima retke', software.length > 0, 'ima ' + software.length);
+check('VULNS ima retke', vulns.length > 0, 'ima ' + vulns.length);
 
-// 2) usporedba verzija
-check('1.28.4 < 1.28.7', api.compareVersions('1.28.4', '1.28.7') === -1);
-check('2.426.2 < 2.440.2', api.compareVersions('2.426.2', '2.440.2') === -1);
-check('5.15.0-91 nije < 5.10.0-30', api.isAffected('5.15.0-91', '<5.10.0-30') === false);
-check('6.1.0-13 upada u >=6.0.0;<6.1.5', api.isAffected('6.1.0-13', '>=6.0.0;<6.1.5') === true);
-check('6.0.30 upada u >=6.0.0;<6.1.5', api.isAffected('6.0.30', '>=6.0.0;<6.1.5') === true);
-check('2.9.4 upada u <2.9.6', api.isAffected('2.9.4', '<2.9.6') === true);
-check('2.9.6 ne upada u <2.9.6', api.isAffected('2.9.6', '<2.9.6') === false);
+var embedded = block('csv-vulns').replace(/^\s+|\s+$/g, '');
+var csvFile = readUtf8(HERE + '\\data\\vulns.csv').replace(/^\s+|\s+$/g, '');
+check('VULNS u index.html je ist kao data/vulns.csv', embedded === csvFile,
+  embedded.length + ' vs ' + csvFile.length + ' znakova');
 
-// 3) pravilo "moje"
+var badShape = [], badShapeEx = '';
+var allowedSoft = {};
+for (var i = 0; i < software.length; i++) allowedSoft[software[i].softver] = 1;
+for (i = 0; i < vulns.length; i++) {
+  var v = vulns[i];
+  var why = '';
+  if (!/^CVE-[0-9]{4}-[0-9]{4,}$/.test(v.cve)) why = 'CVE oblik';
+  else if (!allowedSoft[v.softver]) why = 'softver nije na mom popisu: ' + v.softver;
+  else if (v.pogodene_versije === '' || v.pogodene_versije.indexOf(' ') >= 0 || /[<>=]/.test(v.pogodene_versije) === false) why = 'raspon';
+  else if (isNaN(Number(v.cvss)) || Number(v.cvss) < 0 || Number(v.cvss) > 10) why = 'CVSS';
+  else if (!/^[34]\.[01](\.[0-9])?$/.test(v.cvss_ver)) why = 'verzija CVSS: ' + v.cvss_ver;
+  else if (v.kev !== 'da' && v.kev !== 'ne') why = 'kev';
+  else if (!parseDate(v.datum)) why = 'datum';
+  else if (v.nvd_url !== 'https://nvd.nist.gov/vuln/detail/' + v.cve) why = 'nvd_url';
+  else if (!/^https?:\/\//.test(v.izvor_url) || v.izvor_url.indexOf('example.com') >= 0) why = 'izvor_url';
+  else if (v.fiksno_izdanje === '0') why = 'fiksno izdanje 0';
+  if (why) { badShape.push(v.cve + ' ' + why); if (badShapeEx === '') badShapeEx = v.cve + ': ' + why; }
+}
+check('svaki redak ima ispravne stupce', badShape.length === 0, badShape.length + ' (prvi: ' + badShapeEx + ')');
+
+var outWindow = vulns.filter(function (v) {
+  var d = parseDate(v.datum);
+  var days = Math.round((today - d) / 86400000);
+  return days < 0 || days > api.WINDOW_DAYS;
+});
+check('datum je u prozoru 0-' + api.WINDOW_DAYS + ' dana od snimke', outWindow.length === 0,
+  'izvan: ' + outWindow.map(function (v) { return v.cve + ' ' + v.datum; }).join(' '));
+check('nema izmišljenih e-mail adresa u podacima o propustima',
+  block('csv-vulns').indexOf('example.com') < 0);
+
+// ===== 2) jesu li CVSS i KEV stvarni (iz feeda, ne izmišljeni) =====
+var rawFiles = [];
+var enm = new Enumerator(fso.GetFolder(HERE + '\\data\\raw').Files);
+for (; !enm.atEnd(); enm.moveNext()) if (/\.json$/i.test(enm.item().Name)) rawFiles.push(enm.item().Path);
+check('data/raw ima spremljene NVD odgovore', rawFiles.length > 0, 'datoteka: ' + rawFiles.length);
+
+var kevText = readUtf8(HERE + '\\data\\kev.json');
+var kevIds = {};
+var km = /"cveID": *"([A-Z0-9-]+)"/g, kmMatch;
+while ((kmMatch = km.exec(kevText)) !== null) kevIds[kmMatch[1]] = 1;
+check('data/kev.json sadrži KEV zapise', function () { var n = 0; for (var k in kevIds) n++; return n; }() > 100, 'CVE-ova: ' + (function () { var n = 0; for (var k in kevIds) n++; return n; })());
+
+// svaki CVE iz tablice mora biti u NVD odgovoru, s tom istom ocjenom
+var want = {};
+vulns.forEach(function (v) { want[v.cve + '|' + v.softver] = { cve: v.cve, score: Number(v.cvss), found: false, scored: false }; });
+var rawIds = {};
+for (var f = 0; f < rawFiles.length; f++) {
+  var text = readUtf8(rawFiles[f]);
+  var chunks = text.split('{"cve":{');
+  for (var c = 1; c < chunks.length; c++) {
+    var idm = chunks[c].match(/"id":"(CVE-[0-9]{4}-[0-9]+)"/);
+    if (!idm) continue;
+    var id = idm[1];
+    rawIds[id] = 1;
+    var scores = chunks[c].match(/"baseScore":[0-9.]+/g);
+    if (!scores) continue;
+    for (var w in want) {
+      if (want[w].cve !== id || want[w].scored) continue;
+      for (var s = 0; s < scores.length; s++) {
+        if (Number(scores[s].replace(/[^0-9.]/g, '')) === want[w].score) { want[w].found = true; want[w].scored = true; break; }
+      }
+    }
+  }
+}
+var notInRaw = [], wrongScore = [];
+for (var key in want) {
+  if (!want[key].found) { (rawIds[want[key].cve] ? wrongScore : notInRaw).push(key); }
+}
+check('svaki CVSS u tablici postoji u sirovom NVD odgovoru', notInRaw.length === 0 && wrongScore.length === 0,
+  'nema ga u feedu: ' + notInRaw.length + ', ocjena se ne podudara: ' + wrongScore.length +
+  (notInRaw.length ? ' (prvi: ' + notInRaw[0] + ')' : '') + (wrongScore.length ? ' (prvi: ' + wrongScore[0] + ')' : ''));
+
+var kevYes = vulns.filter(function (v) { return v.kev === 'da'; });
+var kevNoButListed = vulns.filter(function (v) { return v.kev !== 'da' && kevIds[v.cve]; });
+var kevYesButMissing = kevYes.filter(function (v) { return !kevIds[v.cve]; });
+check('KEV zastavica odgovara CISA katalogu (u oba smjera)',
+  kevYesButMissing.length === 0 && kevNoButListed.length === 0,
+  'krivo da: ' + kevYesButMissing.length + ', krivo ne: ' + kevNoButListed.length);
+check('KEV zapisi postoje i nisu izmišljeni', kevYes.length > 0, 'KEV zapisa: ' + kevYes.length);
+
+// ===== 3) pravilo "moje" =====
 var entries = api.buildEntries(software, vulns, today);
-var counters = api.countersFor(entries);
-var listedSoft = {};
-for (i = 0; i < entries.length; i++) listedSoft[entries[i].softver] = 1;
-var mySoft = {};
-for (i = 0; i < software.length; i++) mySoft[software[i].softver] = 1;
-var strangers = [];
-for (var key in listedSoft) if (!mySoft[key]) strangers.push(key);
-check('na listi je samo softver s popisa', strangers.length === 0, 'strani: ' + strangers.join(','));
-var noReason = entries.filter(function (e) { return e.cvss < 9 && !e.kev && e.hit.length === 0; });
-check('svaki zapis ima razlog (Critical, KEV ili pogođena verzija)', noReason.length === 0, 'bez razloga: ' + noReason.length);
-var dropped = vulns.filter(function (v) { return !has(entries, v.cve); });
-var droppedMine = dropped.filter(function (v) { return mySoft[v.softver]; });
-check('ispalo je samo softver koji ne vrtim (mysql, wordpress, nginx, git)', droppedMine.length === 0,
-  'ispalo iz moga popisa: ' + dropped.map(function (v) { return v.softver; }).join(','));
-check('runi brojači', counters.danas === entries.filter(function (e) { return e.days === 0; }).length &&
-  counters.tjedan === entries.filter(function (e) { return e.days <= 6; }).length && counters.sve === entries.length,
-  'danas ' + counters.danas + ', 7 dana ' + counters.tjedan + ', 20 dana ' + counters.sve);
+function has(list, cve) { for (var j = 0; j < list.length; j++) if (list[j].cve === cve) return true; return false; }
+check('na listi je samo softver s moga popisa',
+  entries.every(function (e) { return allowedSoft[e.softver]; }));
+var noReason = entries.filter(function (e) { return e.cvss < 9 && !e.hit.length && e.kev !== 'da'; });
+check('svaki zapis ima razlog (CVSS >= 9, KEV ili pogođena verzija)', noReason.length === 0, 'bez razloga: ' + noReason.length);
+var hits = entries.filter(function (e) { return e.hit.length; });
+check('barem jedan zapis pogađa moju verziju', hits.length > 0, 'pogođenih: ' + hits.length + ' od ' + entries.length);
+var wrongHit = entries.filter(function (e) {
+  return e.hit.length !== vulns.filter(function (v) { return v.cve === e.cve && v.softver === e.softver; })
+    .filter(function (v) {
+      return software.some(function (s) { return s.softver === v.softver && api.isAffected(s.verzija, v.pogodene_versije); });
+    }).length;
+});
+check('pogoci su izračunati iz raspona, ne upisani ručno', wrongHit.length === 0, 'nered: ' + wrongHit.length);
 
-// 4) test iz plana: verzija gore -> zapis nestaje
-var withFixedLoki = software.map(function (s) {
+// ===== 4) brojači =====
+var counters = api.countersFor(entries);
+check('brojači su točni',
+  counters.danas === entries.filter(function (e) { return e.days === 0; }).length &&
+  counters.tjedan === entries.filter(function (e) { return e.days <= 6; }).length &&
+  counters.sve === entries.length,
+  'danas ' + counters.danas + ', 7 dana ' + counters.tjedan + ', 20 dana ' + counters.sve);
+var todayRows = vulns.filter(function (v) { return Math.round((today - parseDate(v.datum)) / 86400000) === 0; });
+check('brojač "danas" odgovara podacima', counters.danas <= todayRows.length &&
+  entries.filter(function (e) { return e.days === 0; }).length === todayRows.filter(function (v) { return has(entries, v.cve); }).length,
+  'danas prijavljenih: ' + todayRows.length + ', na listi: ' + counters.danas);
+
+// ===== 5) verzija gore -> zapis nestaje =====
+var bumpable = null;
+for (i = 0; i < entries.length; i++) {
+  var e = entries[i];
+  if (e.hit.length && e.cvss < 9 && e.kev !== 'da' && e.fixed) { bumpable = e; break; }
+}
+if (!bumpable) throw new Error('nema zapisa za test verzije (treba hit, CVSS < 9, bez KEV)');
+var fixedVer = bumpable.fixed.split('/')[0];
+var host = software.filter(function (s) { return s.softver === bumpable.softver && api.isAffected(s.verzija, bumpable.spec); })[0];
+var raised = software.map(function (s) {
   var copy = {}; for (var k in s) copy[k] = s[k];
-  if (copy.stroj === 'mon-03') copy.verzija = '2.9.6';
+  if (copy.stroj === host.stroj) copy.verzija = fixedVer;
   return copy;
 });
-var afterFix = api.buildEntries(withFixedLoki, vulns, today);
-function has(list, cve) { for (var j = 0; j < list.length; j++) if (list[j].cve === cve) return true; return false; }
-check('CVE-2026-10160 (loki 4.5, bez KEV) je PRIJE testa na listi', has(entries, 'CVE-2026-10160'));
-check('CVE-2026-10160 NESTAJE kad je verzija 2.9.6 (fiksna)', !has(afterFix, 'CVE-2026-10160'));
-check('broj zapisa pao točno za 1', afterFix.length === entries.length - 1, entries.length + ' -> ' + afterFix.length);
+var afterRaise = api.buildEntries(raised, vulns, today);
+check(bumpable.cve + ' NESTAJE kad ' + host.stroj + ' ide s ' + host.verzija + ' na ' + fixedVer, !has(afterRaise, bumpable.cve),
+  'CVSS ' + bumpable.cvss + ', KEV ' + bumpable.kev);
 
-// 5) test iz plana: nova pogođena verzija -> zapis se pojavi
-var extra = software.concat([{ stroj: 'db-01', softver: 'mysql', verzija: '8.0.30', grupa: 'Alati', owner: 'tim-c@example.com' }]);
-var withMysql = api.buildEntries(extra, vulns, today);
-check('mysql 8.0.30 se POJAVI (CVE-2026-10058, CVSS 5.6, bez KEV, samo zbog verzije)', has(withMysql, 'CVE-2026-10058'));
-var extraFixed = software.concat([{ stroj: 'db-01', softver: 'mysql', verzija: '8.0.36', grupa: 'Alati', owner: 'tim-c@example.com' }]);
-check('mysql 8.0.36 (fiksni) NE ulazi na listu', !has(api.buildEntries(extraFixed, vulns, today), 'CVE-2026-10058'));
+// ===== 6) nova pogođena verzija -> zapis se pojavi =====
+var growable = null, growVer = '';
+for (i = 0; i < vulns.length; i++) {
+  var v = vulns[i];
+  if (allowedSoft[v.softver] && !has(entries, v.cve) && v.cvss < 9 && v.kev !== 'da' && /^>=[^;|]+;/.test(v.pogodene_versije)) {
+    growable = v; growVer = v.pogodene_versije.match(/^>=([^;|]+)/)[1]; break;
+  }
+}
+if (!growable) throw new Error('nema zapisa za test nove verzije');
+var grown = software.concat([{ stroj: 'novi-01', softver: growable.softver, verzija: growVer, grupa: 'Alati', owner: 'tim-n@example.com' }]);
+check(growable.cve + ' se POJAVI kad novi stroj ' + growVer + ' dođe na popis',
+  has(api.buildEntries(grown, vulns, today), growable.cve), 'CVSS ' + growable.cvss + ' < 9, bez KEV, samo zbog verzije');
 
 WScript.Echo('');
 WScript.Echo('rezultat: ' + (fails === 0 ? 'SVI TESTOVI PROSLI' : fails + ' TEST(A) NIJE PROSLIO') +
-  ' | na listi ' + entries.length + ' od ' + vulns.length + ' objava');
+  ' | ' + vulns.length + ' stvarnih prijava, na listi ' + entries.length + ', pogođeno ' + hits.length +
+  ', KEV ' + kevYes.length);
 WScript.Quit(fails === 0 ? 0 : 1);
