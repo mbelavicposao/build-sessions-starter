@@ -35,7 +35,9 @@ if (!logicMatch) throw new Error('nema LOGIKA bloka u index.html');
 var api = new Function(logicMatch[1] +
   '; return { parseCsv: parseCsv, compareVersions: compareVersions, isAffected: isAffected,' +
   ' buildEntries: buildEntries, countersFor: countersFor, WINDOW_DAYS: WINDOW_DAYS,' +
-  ' cmp: cmp, val: val, head: head, SORT: SORT, COLS: COLS };')();
+  ' cmp: cmp, val: val, head: head, SORT: SORT, COLS: COLS, epssText: epssText, epssClass: epssClass,' +
+  ' markStatus: markStatus, statusText: statusText, sevClass: sevClass, rankScore: rankScore,' +
+  ' topFive: topFive, topWhy: topWhy };')();
 
 var software = api.parseCsv(block('csv-software'));
 var vulns = api.parseCsv(block('csv-vulns'));
@@ -281,6 +283,172 @@ check('sort po "fiks dostupan" - s fiksom prvi', withFix.length > 0 && (function
   return true;
 })(), 's fiksom ' + withFix.length + ' od ' + entries.length);
 api.SORT.key = ''; api.SORT.dir = 1;
+
+// ===== 8) EPSS - svaka ocjena mora postojati u data/epss.csv =====
+var epssPath = HERE + '\\data\\epss.csv';
+var haveEpssFile = fso.FileExists(epssPath);
+check('data/epss.csv postoji (bash fetch.sh)', haveEpssFile, epssPath);
+
+var epssMap = {}, epssDate = '', epssRows = 0;
+if (haveEpssFile) {
+  var elines = readUtf8(epssPath).split(/\r?\n/);
+  for (i = 0; i < elines.length; i++) {
+    var ln = elines[i];
+    if (!ln) continue;
+    var md = ln.match(/^# *score_date:(\d{4}-\d{2}-\d{2})/);
+    if (md) { epssDate = md[1]; continue; }
+    var cc = ln.split(',');
+    if (cc.length < 3 || !cc[0] || cc[0] === 'cve') continue;
+    epssMap[cc[0]] = { e: cc[1], p: cc[2] }; epssRows++;
+  }
+}
+check('EPSS snimak ima datum i zapise', /^\d{4}-\d{2}-\d{2}$/.test(epssDate) && epssRows > 100,
+  'datum ' + (epssDate || 'nema') + ', zapisa ' + epssRows);
+check('EPSS snimak nije iz buducnosti',
+  epssDate !== '' && epssDate <= snapMatch[1] + '-' + snapMatch[2] + '-' + snapMatch[3],
+  'EPSS ' + epssDate + ', snimak stranice ' + snapMatch[1] + '-' + snapMatch[2] + '-' + snapMatch[3]);
+
+var badEpss = [], noEpss = 0, epssShown = 0;
+for (i = 0; i < vulns.length; i++) {
+  var vv = vulns[i], epssSrc = epssMap[vv.cve];
+  if (vv.epss === '') {
+    noEpss++;
+    if (epssSrc && epssSrc.e !== '0') badEpss.push(vv.cve + ': prazno u tablici, a EPSS ima ' + epssSrc.e);
+    continue;
+  }
+  epssShown++;
+  if (!epssSrc) { badEpss.push(vv.cve + ': ' + vv.epss + ' ne postoji u data/epss.csv'); continue; }
+  if (epssSrc.e !== vv.epss || epssSrc.p !== vv.epss_pct) {
+    badEpss.push(vv.cve + ': ' + vv.epss + '/' + vv.epss_pct + ' vs ' + epssSrc.e + '/' + epssSrc.p);
+  }
+}
+check('svaka EPSS ocjena u tablici je doslovno iz data/epss.csv', badEpss.length === 0,
+  badEpss.length + ' (prvi: ' + (badEpss[0] || '') + ') | s ocjenom ' + epssShown + ', bez nje ' + noEpss);
+check('prazna EPSS ocjena ostaje prazna, ne 0',
+  vulns.filter(function (v) { return v.epss === '0'; }).length === 0);
+check('stranica kaze kad EPSS nema ocjenu', html.indexOf('nema ocjene') >= 0 && html.indexOf('id="epssnote"') >= 0);
+var epNote = (html.match(/id="epssnote">([\s\S]*?)<\/p>/) || ['', ''])[1];
+check('biljeska o EPSS odgovara broju bez ocjene',
+  epNote.indexOf('snimka ' + epssDate) >= 0 &&
+  (noEpss === 0 ? epNote.indexOf('svih') >= 0 : epNote.indexOf('bez ocjene je ' + noEpss) >= 0),
+  epNote);
+
+api.SORT.key = 'epss'; api.SORT.dir = -1;
+var byEpss = entries.slice(0).sort(api.cmp);
+var epssOrder = true;
+for (i = 1; i < byEpss.length; i++) if (api.val(byEpss[i - 1], 'epss') < api.val(byEpss[i], 'epss')) epssOrder = false;
+check('sort po EPSS radi i percentil se prikazuje',
+  epssOrder && api.epssText(byEpss[0]).indexOf('perc.') >= 0,
+  'najveca EPSS: ' + byEpss[0].cve + ' -> ' + api.epssText(byEpss[0]).replace(/<[^>]*>/g, '') +
+  ', bez ocjene: ' + entries.filter(function (e) { return !(e.epss >= 0); }).length);
+api.SORT.key = ''; api.SORT.dir = 1;
+
+// ===== 9) NOVO / PROMIJENJENO - usporedba sa proslom snimkom =====
+var prev = api.parseCsv(block('csv-prev'));
+var prevFile = readUtf8(HERE + '\\data\\prev.csv').replace(/^\s+|\s+$/g, '');
+check('csv-prev u index.html je ist kao data/prev.csv', block('csv-prev').replace(/^\s+|\s+$/g, '') === prevFile,
+  block('csv-prev').replace(/^\s+|\s+$/g, '').length + ' vs ' + prevFile.length + ' znakova');
+check('prosla snimka ima zapise', prev.length > 0, 'zapisa: ' + prev.length);
+
+function cloneEntry(e) { var o = {}; for (var k in e) o[k] = e[k]; return o; }
+var prevIdx = {};
+for (i = 0; i < prev.length; i++) prevIdx[prev[i].cve + '|' + prev[i].softver] = prev[i];
+
+var marked = api.markStatus(entries.map(cloneEntry), prev);
+var wrongStatus = [];
+for (i = 0; i < marked.length; i++) {
+  var mk = marked[i], p = prevIdx[mk.cve + '|' + mk.softver];
+  if (!p) { if (mk.status !== 'novo') wrongStatus.push(mk.cve + ' nije bilo proshi put, a oznaka je "' + mk.status + '"'); continue; }
+  var same = String(p.cvss) === mk.cvss.toFixed(1) &&
+    (String(p.kev).toLowerCase() === 'da') === mk.kev &&
+    (p.fiksno_izdanje || '') === (mk.fixed || '') &&
+    (p.pogodene_versije || '') === (mk.spec || '');
+  if (same && mk.status !== '') wrongStatus.push(mk.cve + ' je isto, a oznaceno je kao ' + mk.status);
+  if (!same && mk.status !== 'promijenjeno') wrongStatus.push(mk.cve + ' se promijenilo, a oznaka je "' + mk.status + '"');
+}
+check('oznaka odgovara onome sto je bilo proshi put', wrongStatus.length === 0,
+  wrongStatus.length + ' (prvi: ' + (wrongStatus[0] || '') + ')');
+
+// sinteticka prosla snimka: jednog zapisa "nije bilo", drugom su promijenjeni KEV i CVSS
+var gone = vulns.filter(function (v) { return has(entries, v.cve); })[0];
+var kevEntry = null;
+for (i = 0; i < entries.length; i++) if (entries[i].kev) { kevEntry = entries[i]; break; }
+var fakePrev = [];
+for (i = 0; i < vulns.length; i++) {
+  var fv = vulns[i];
+  if (fv.cve === gone.cve && fv.softver === gone.softver) continue;
+  fakePrev.push({ cve: fv.cve, softver: fv.softver, cvss: fv.cvss, kev: fv.kev,
+    fiksno_izdanje: fv.fiksno_izdanje, pogodene_versije: fv.pogodene_versije });
+}
+if (kevEntry) {
+  for (i = 0; i < fakePrev.length; i++) {
+    if (fakePrev[i].cve === kevEntry.cve) { fakePrev[i].kev = 'ne'; fakePrev[i].cvss = '1.0'; }
+  }
+}
+var fake = api.markStatus(entries.map(cloneEntry), fakePrev);
+var goneMark = null, kevMark = null;
+for (i = 0; i < fake.length; i++) {
+  if (fake[i].cve === gone.cve) goneMark = fake[i];
+  if (kevEntry && fake[i].cve === kevEntry.cve) kevMark = fake[i];
+}
+check('nepoznat zapis dobiva NOVO', goneMark !== null && goneMark.status === 'novo' &&
+  api.statusText(goneMark).indexOf('NOVO') >= 0, goneMark ? goneMark.status : 'nema zapisa');
+check('promijenjen KEV ili CVSS dobiva PROMIJENJENO i to se vidi',
+  kevMark !== null && kevMark.status === 'promijenjeno' && api.statusText(kevMark).indexOf('PROMIJENJENO') >= 0 &&
+  kevMark.diff.indexOf('KEV') >= 0 && kevMark.diff.indexOf('CVSS') >= 0,
+  kevMark ? kevMark.status + ' | ' + kevMark.diff : 'nema KEV zapisa');
+check('bez prosle snimke nema nijedne oznake',
+  html.indexOf('if (PREV.length) markStatus') >= 0 && html.indexOf('Prva snimka') >= 0);
+check('oznaka se filtrira i broji', html.indexOf('id="f-new"') >= 0 && html.indexOf('novo / promijenjeno') >= 0,
+  'NOVO ' + marked.filter(function (e) { return e.status === 'novo'; }).length +
+  ', PROMIJENJENO ' + marked.filter(function (e) { return e.status === 'promijenjeno'; }).length);
+
+// ===== 10) izgled: pruga ozbiljnosti, top 5, sticky zaglavlje, tema =====
+var sevErr = [];
+for (i = 0; i < entries.length; i++) {
+  var e2 = entries[i], want = e2.kev ? 'stripe-kev' : (e2.cvss >= 9 ? 'stripe-9' : (e2.cvss >= 7 ? 'stripe-7' : ''));
+  if (api.sevClass(e2) !== want) sevErr.push(e2.cve + ': ' + api.sevClass(e2) + ' umjesto ' + want);
+}
+check('pruga uz redak odgovara KEV ili CVSS', sevErr.length === 0, sevErr.length + ' (prvi: ' + (sevErr[0] || '') + ')');
+check('pruga se stvarno ispisuje u tablici',
+  html.indexOf('<tr class="\' + sevClass(e) + \'">') >= 0 && html.indexOf('tr.stripe-kev > td:first-child') >= 0);
+
+var t5 = api.topFive(entries);
+var topOk = t5.length === 5, prevScore = 1e9, topBad = '';
+for (i = 0; i < t5.length; i++) {
+  var s = api.rankScore(t5[i]);
+  if (s > prevScore) { topOk = false; topBad = t5[i].cve + ' ima veci rang od prethodnog'; }
+  prevScore = s;
+}
+var kevEntries = entries.filter(function (e) { return e.kev; });
+var kevFirst = kevEntries.length === 0 || t5[0].kev === true;
+check('top 5 ima 5 redaka i ide od najgoreg', topOk && kevFirst,
+  t5.map(function (e) { return e.cve + ' (' + api.rankScore(e) + ')'; }).join(', ') + ' | ' + topBad);
+var firstKev = kevEntries.length ? kevEntries[0] : null;
+check('top 5 kaze zasto je taj redak tu',
+  api.topWhy(t5[0]).length > 5 && (!firstKev || api.topWhy(firstKev).indexOf('KEV') >= 0),
+  api.topWhy(t5[0]));
+check('top 5 se ne ponavlja i ne nestaje s filterom',
+  html.indexOf('topFive(rows)') >= 0 && html.indexOf('id="top5"') >= 0);
+
+var stickyOk = html.indexOf('position: sticky') >= 0 && html.indexOf('<thead><tr>') >= 0 && html.indexOf('</thead><tbody>') >= 0;
+check('zaglavlje tablice ostaje vidljivo dok se skrola', stickyOk);
+
+var themeOk = html.indexOf('id="ui-theme"') >= 0 && html.indexOf('id="ui-density"') >= 0 &&
+  html.indexOf('body.light') >= 0 && html.indexOf('body.compact') >= 0 &&
+  html.indexOf('localStorage') >= 0 && html.indexOf('applyUi') >= 0;
+check('tema i gustoća se mogu promijeniti i pamte se', themeOk);
+var cssVars = (html.match(/var\(--[a-z0-9]+\)/g) || []).length;
+var themes = html.match(/:root \{([\s\S]*?)\}/);
+var lightTheme = html.match(/body\.light \{([\s\S]*?)\}/);
+var missingVar = [];
+var NEEDED = ['--bg', '--fg', '--panel', '--edge', '--muted', '--accent', '--link', '--hi', '--kev', '--ok', '--nofix'];
+for (i = 0; i < NEEDED.length; i++) {
+  if (!themes || themes[1].indexOf(NEEDED[i] + ':') < 0) missingVar.push('tamno ' + NEEDED[i]);
+  if (!lightTheme || lightTheme[1].indexOf(NEEDED[i] + ':') < 0) missingVar.push('svijetlo ' + NEEDED[i]);
+}
+check('boje su u varijablama pa tema preboji sve odjednom', cssVars >= 25 && missingVar.length === 0,
+  cssVars + ' var(...) referenci, nedostaje: ' + (missingVar.join(', ') || 'nista'));
 
 WScript.Echo('');
 WScript.Echo('rezultat: ' + (fails === 0 ? 'SVI TESTOVI PROSLI' : fails + ' TEST(A) NIJE PROSLIO') +

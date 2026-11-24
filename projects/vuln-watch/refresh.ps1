@@ -89,6 +89,19 @@ foreach ($m in [regex]::Matches($kevText, '"cveID": *"([A-Z0-9-]+)"[^}]*?"dateAd
 }
 Write-Host ("KEV: {0} zapisa" -f $kevIds.Count)
 
+# --- 3b) EPSS (FIRST): vjerojatnost da ce netko pokusati iskoristiti ovaj propust ---
+$epss = @{}
+$epssDate = ''
+if (Test-Path 'data/epss.csv') {
+  foreach ($l in (Get-Content -Encoding UTF8 'data/epss.csv')) {
+    if ($l -match '^# *score_date:([0-9-]{10})') { $epssDate = $matches[1]; continue }
+    $c = $l.Split(',')
+    if ($c.Count -lt 3 -or $c[0] -eq '' -or $c[0] -eq 'cve') { continue }
+    $epss[$c[0]] = @{ e = $c[1]; p = $c[2] }
+  }
+}
+Write-Host ("EPSS: {0} ocjena (snimka {1})" -f $epss.Count, $epssDate)
+
 # --- 4) projdi kroz NVD zapis ---
 $rows = @{}
 $unknown = @{}
@@ -203,10 +216,13 @@ foreach ($file in (Get-ChildItem 'data/raw/*.json' | Sort-Object Name)) {
         if ($best.score -gt $old.cvss) { $old.cvss = $best.score; $old.cver = $best.ver }
       }
       else {
+        $ep = $null
+        if ($epss.ContainsKey($cve)) { $ep = $epss[$cve] }
         $rows[$key] = [pscustomobject]@{
           cve = $cve; softver = $hitToken; proizvod = $proizvod; opis = $opis
           spec = $spec; fixed = $fixed; date = $pub; days = $days
-          cvss = $best.score; cver = $best.ver; kev = $(if ($kevIds.ContainsKey($cve)) { 'da' } else { 'ne' }); url = $url
+          cvss = $best.score; cver = $best.ver; epss = $(if ($ep) { $ep.e } else { '' }); epssPct = $(if ($ep) { $ep.p } else { '' })
+          kev = $(if ($kevIds.ContainsKey($cve)) { 'da' } else { 'ne' }); url = $url
         }
       }
     }
@@ -215,15 +231,41 @@ foreach ($file in (Get-ChildItem 'data/raw/*.json' | Sort-Object Name)) {
 
 $list = @($rows.Values | Sort-Object @{Expression = 'days'; Descending = $false }, @{Expression = 'cvss'; Descending = $true })
 
+# --- 4b) što je alat pokazivao prošli put (za oznake NOVO / PROMIJENJENO) ---
+# uzimamo staru data/vulns.csv PRIJE nego je prepišemo; stupci su namjerno malobrojni
+$prevDate = [regex]::Match($html, 'id="snapshot">([0-9-]{10})<').Groups[1].Value
+$prevLines = New-Object System.Collections.ArrayList
+[void]$prevLines.Add('cve,softver,cvss,kev,fiksno_izdanje,pogodene_versije')
+if (Test-Path 'data/vulns.csv') {
+  $oldLines = @((Get-Content -Raw -Encoding UTF8 'data/vulns.csv') -split "`r?`n" | Where-Object { $_.Trim() -ne '' })
+  if ($oldLines.Count -gt 1) {
+    $oh = $oldLines[0].Split(','); $ix = @{}
+    for ($q = 0; $q -lt $oh.Count; $q++) { $ix[$oh[$q].Trim()] = $q }
+    foreach ($l in ($oldLines | Select-Object -Skip 1)) {
+      $c = $l.Split(',')
+      $cells = @()
+      foreach ($n in @('cve', 'softver', 'cvss', 'kev', 'fiksno_izdanje', 'pogodene_versije')) {
+        $v = ''
+        if ($ix.ContainsKey($n) -and $ix[$n] -lt $c.Count) { $v = $c[$ix[$n]] }
+        $cells += (Clean $v)
+      }
+      [void]$prevLines.Add(($cells -join ','))
+    }
+  }
+}
+$prevCsv = $prevLines -join "`n"
+[IO.File]::WriteAllText((Join-Path (Get-Location) 'data/prev.csv'), $prevCsv, (New-Object Text.UTF8Encoding($false)))
+Write-Host ("prošla snimka za usporedbu: {0} zapisa (od {1})" -f ($prevLines.Count - 1), $prevDate)
+
 # --- 5) CSV za index.html + upis u blok ---
 $lines = New-Object System.Collections.ArrayList
-[void]$lines.Add('cve,softver,izvor_proizvod,pogodene_versije,fiksno_izdanje,cvss,cvss_ver,kev,datum,izvor_url,nvd_url,opis')
+[void]$lines.Add('cve,softver,izvor_proizvod,pogodene_versije,fiksno_izdanje,cvss,cvss_ver,epss,epss_pct,kev,datum,izvor_url,nvd_url,opis')
 foreach ($r in $list) {
   $u = $r.url
   if ($u -eq '') { $u = 'https://nvd.nist.gov/vuln/detail/' + $r.cve }
   [void]$lines.Add((
       $r.cve, $r.softver, (Clean $r.proizvod), (Clean $r.spec), (Clean $r.fixed),
-      $r.cvss.ToString('0.0', $culture), $r.cver, $r.kev, $r.date,
+      $r.cvss.ToString('0.0', $culture), $r.cver, $r.epss, $r.epssPct, $r.kev, $r.date,
       (Clean $u), ('https://nvd.nist.gov/vuln/detail/' + $r.cve), (Clean $r.opis)) -join ',')
 }
 $csv = $lines -join "`n"
@@ -240,14 +282,29 @@ if ($noRange.Count -gt 0) {
 $html = [regex]::Replace($html, '(?s)(<script type="text/csv" id="csv-vulns">).*?(</script>)', {
     param($m) $m.Groups[1].Value + "`n" + $csv + "`n" + $m.Groups[2].Value
 })
+$html = [regex]::Replace($html, '(?s)(<script type="text/csv" id="csv-prev">).*?(</script>)', {
+    param($m) $m.Groups[1].Value + "`n" + $prevCsv + "`n" + $m.Groups[2].Value
+})
+$html = [regex]::Replace($html, '(id="prevdate">)[^<]*(<)', ('${1}' + $prevDate + '${2}'))
 $html = [regex]::Replace($html, '(id="norange">)[^<]*(<)', ('${1}' + $nrange + '${2}'))
 $html = [regex]::Replace($html, '(id="snapshot">)[^<]*(<)', ('${1}' + $today.ToString('yyyy-MM-dd', $culture) + '${2}'))
+
+$noEpss = @($list | Where-Object { $_.epss -eq '' })
+$epnote = ''
+if ($list.Count -gt 0) {
+  if ($epss.Count -eq 0) { $epnote = 'EPSS ocjena nije dohvaćena - pokreni bash fetch.sh pa ovu skriptu.' }
+  elseif ($noEpss.Count -gt 0) { $epnote = ('EPSS (snimka {0}): bez ocjene je {1} od {2} zapisa - takvi redovi imaju "-".' -f $epssDate, $noEpss.Count, $list.Count) }
+  else { $epnote = ('EPSS (snimka {0}): ocjena postoji za svih {1} zapisa.' -f $epssDate, $list.Count) }
+}
+$html = [regex]::Replace($html, '(id="epssdate">)[^<]*(<)', ('${1}' + $epssDate + '${2}'))
+$html = [regex]::Replace($html, '(id="epssnote">)[^<]*(<)', ('${1}' + $epnote + '${2}'))
 [IO.File]::WriteAllText((Join-Path (Get-Location) 'index.html'), $html, (New-Object Text.UTF8Encoding($false)))
 
 # --- 6) kratko izvjesce ---
 Write-Host ""
 Write-Host ("zapisa u VULNS: {0} (KEV {1}, danas {2})" -f $list.Count, @($list | Where-Object { $_.kev -eq 'da' }).Count, @($list | Where-Object { $_.days -eq 0 }).Count)
 Write-Host ("bez strojno čitljivog raspona verzija, nisu u tablici: {0}" -f ($noRange.Values | Measure-Object -Sum).Sum)
+Write-Host ("EPSS: {0} ocjena u snimci {1}, bez ocjene u tablici: {2}" -f $epss.Count, $epssDate, $noEpss.Count)
 Write-Host "po softveru:"
 $list | Group-Object softver | Sort-Object Count -Descending | ForEach-Object { Write-Host ("  {0,-18} {1}" -f $_.Name, $_.Count) }
 Write-Host ""

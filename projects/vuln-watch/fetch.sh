@@ -62,4 +62,30 @@ while IFS='|' read -r label file; do
 done <<EOF
 $KEYS
 EOF
+
+# --- EPSS (FIRST): kolika je vjerojatnost da ce netko ovaj propust doista pokusati iskoristiti ---
+# Jedan danasnji snimak sadrzi sve CVE-ove, pa nema batchanja. Prvi dan koji je gotov.
+echo "--- EPSS ---"
+EPSS_DATE=""
+for back in 0 1 2 3; do
+  d=$(date -u -d "today -${back} days" +%Y-%m-%d)
+  code=$(curl -sSL -m 180 -o data/epss.gz -w "%{http_code}" "https://epss.cyentia.com/epss_scores-${d}.csv.gz")
+  if [ "$code" = "200" ] && gunzip -t data/epss.gz 2>/dev/null; then EPSS_DATE=$d; break; fi
+  echo "  snimak $d nije bio dostupan (HTTP $code)"
+done
+if [ -z "$EPSS_DATE" ]; then
+  rm -f data/epss.gz
+  echo "EPSS: nema snimka; epss stupce ostavljam prazne"
+else
+  grep -ho 'CVE-[0-9]\{4\}-[0-9]\{4,\}' data/raw/*.json | sort -u > data/.epss-want.txt
+  want=$(wc -l < data/.epss-want.txt)
+  { echo "# score_date:$EPSS_DATE"
+    echo "cve,epss,percentile"
+    gunzip -c data/epss.gz | awk -F, 'NR==FNR { want[$1] = 1; next } FNR > 2 && ($1 in want) { print $1 "," $2 "," $3 }' \
+      data/.epss-want.txt -
+  } > data/epss.csv
+  got=$(($(wc -l < data/epss.csv) - 2))
+  rm -f data/epss.gz data/.epss-want.txt
+  echo "EPSS snimak $EPSS_DATE: ocjena za $got od $want trazenih CVE-ova"
+fi
 echo "gotovo"

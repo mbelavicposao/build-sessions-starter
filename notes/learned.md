@@ -29,3 +29,7 @@ Vrijedi zapamtiti: "softver" u retku je skraćenica s moga popisa (npr. grafana)
 ## Korak 7 - fiks i sortiranje
 Stupac "fiks dostupan" sada izričito kaže "da - <izdanje>" ili "ne - NVD ne navodi izdanje" (od 35 zapisa na listi 34 ima fix), a svaki naslov stupca je kliknut za sortiranje u oba smjera. `check.js` je narastao na 27 testova: provjerava da svih 9 stupaca ima klik i da svaki sortira u oba smjera.
 Vrijedi zapamtiti: logika koju treba dokazati testom stoji između markera LOGIKA-POCETAK/KRAJ u index.html, zato je tamo premješteno i sortiranje; test ne može provjeriti izgled, samo ponašanje.
+
+## Korak 7 - EPSS, "što je novo", notifikacija i izgled
+Dodano četiri: EPSS stupac iz FIRST-ovog dnevnog snimka (748 ocjena, jedan zapis bez ocjene jer je prijava novija od snimke), oznake NOVO / PROMIJENJENO iz usporedbe sa proslom snimkom (`data/prev.csv`), `notify.ps1` koji iskoči Windows notifikacijom i upiše redak u bilješku, te tamna/svijetla tema, gusto prikaz, urezani naslovi stupaca, pruga uz redak i panel "Top 5". `check.js` je narastao na 50 testova i svi prolaze.
+Vrijedi zapamtiti: ne mora se ništa slati da bi obavijest radila - `notify.ps1` čita isti CSV koji čita stranica, pa notifikacija i stranica ne mogu pokazati različite brojeve; ako EPSS ocjena nedostaje, u tablici piše "nema ocjene", nikad 0.
